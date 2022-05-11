@@ -105,9 +105,9 @@ class Motion_CNN():
                 checkpoint = torch.load(self.resume)
 
                 if self.multi_gpu_available():
-                    self.model.module.load_state_dict(checkpoint['model'])
+                    self.model.module.load_state_dict(checkpoint['state_dict'])
                 else:
-                    self.model.load_state_dict(checkpoint['model'])
+                    self.model.load_state_dict(checkpoint['state_dict'])
 
                 self.start_epoch = checkpoint['epoch']
                 self.best_prec1 = checkpoint['best_prec1']
