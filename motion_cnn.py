@@ -174,9 +174,9 @@ class Motion_CNN():
 
             # measure accuracy and record loss
             prec1, prec5 = accuracy(output.data, label, topk=(1, 5))
-            losses.update(loss.data[0], data.size(0))
-            top1.update(prec1[0], data.size(0))
-            top5.update(prec5[0], data.size(0))
+            losses.update(loss.item(), data.size(0))
+            top1.update(prec1.item(), data.size(0))
+            top5.update(prec5.item(), data.size(0))
 
             # compute gradient and do SGD step
             self.optimizer.zero_grad()
@@ -237,7 +237,7 @@ class Motion_CNN():
         video_top1, video_top5, video_loss = self.frame2_video_level_accuracy()
         info = {'Epoch':[self.epoch],
                 'Batch Time':[round(batch_time.avg,3)],
-                'Loss':[round(video_loss,5)],
+                'Loss':[np.round(video_loss,5)],
                 'Prec@1':[round(video_top1,3)],
                 'Prec@5':[round(video_top5,3)]
                 }
