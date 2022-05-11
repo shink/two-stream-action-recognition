@@ -75,21 +75,35 @@ class Spatial_CNN():
 
     def build_model(self):
         print ('==> Build model and setup loss and optimizer')
-        #build model
-        self.model = resnet101(pretrained= True, channel=3).cuda()
+        self.model = resnet101(pretrained= True, channel=3)
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        if self.multi_gpu_available():
+            print("training on %d gpus" % torch.cuda.device_count())
+            self.model = nn.DataParallel(self.model)
+
         #Loss function and optimizer
-        self.criterion = nn.CrossEntropyLoss().cuda()
+        self.criterion = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9)
         self.scheduler = ReduceLROnPlateau(self.optimizer, 'min', patience=1,verbose=True)
+
+        self.model.to(device)
+        self.criterion.to(device)
     
     def resume_and_evaluate(self):
         if self.resume:
             if os.path.isfile(self.resume):
                 print("==> loading checkpoint '{}'".format(self.resume))
                 checkpoint = torch.load(self.resume)
+
+                if self.multi_gpu_available():
+                    self.model.module.load_state_dict(checkpoint['state_dict'])
+                else:
+                    self.model.load_state_dict(checkpoint['state_dict'])
+
                 self.start_epoch = checkpoint['epoch']
                 self.best_prec1 = checkpoint['best_prec1']
-                self.model.load_state_dict(checkpoint['state_dict'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 print("==> loaded checkpoint '{}' (epoch {}) (best_prec1 {})"
                   .format(self.resume, checkpoint['epoch'], self.best_prec1))
@@ -120,7 +134,7 @@ class Spatial_CNN():
             
             save_checkpoint({
                 'epoch': self.epoch,
-                'state_dict': self.model.state_dict(),
+                'state_dict': self.model.module.state_dict() if self.multi_gpu_available() else self.model.state_dict(),
                 'best_prec1': self.best_prec1,
                 'optimizer' : self.optimizer.state_dict()
             },is_best,'record/spatial/checkpoint.pth.tar','record/spatial/model_best.pth.tar')
@@ -158,9 +172,9 @@ class Spatial_CNN():
 
             # measure accuracy and record loss
             prec1, prec5 = accuracy(output.data, label, topk=(1, 5))
-            losses.update(loss.data[0], data.size(0))
-            top1.update(prec1[0], data.size(0))
-            top5.update(prec5[0], data.size(0))
+            losses.update(loss.item(), data.size(0))
+            top1.update(prec1.item(), data.size(0))
+            top5.update(prec5.item(), data.size(0))
 
             # compute gradient and do SGD step
             self.optimizer.zero_grad()
@@ -219,7 +233,7 @@ class Spatial_CNN():
 
         info = {'Epoch':[self.epoch],
                 'Batch Time':[round(batch_time.avg,3)],
-                'Loss':[round(video_loss,5)],
+                'Loss':[np.round(video_loss,5)],
                 'Prec@1':[round(video_top1,3)],
                 'Prec@5':[round(video_top5,3)]}
         record_info(info, 'record/spatial/rgb_test.csv','test')
@@ -255,7 +269,14 @@ class Spatial_CNN():
         #print(' * Video level Prec@1 {top1:.3f}, Video level Prec@5 {top5:.3f}'.format(top1=top1, top5=top5))
         return top1,top5,loss.data.cpu().numpy()
 
+    def gpu_available(self) -> bool:
+        return torch.cuda.is_available()
 
+    def gpu_count(self) -> int:
+        return torch.cuda.device_count()
+
+    def multi_gpu_available(self) -> bool:
+        return self.gpu_available() and self.gpu_count() > 1
 
 
 
