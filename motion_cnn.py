@@ -82,22 +82,35 @@ class Motion_CNN():
 
     def build_model(self):
         print ('==> Build model and setup loss and optimizer')
-        #build model
-        self.model = resnet101(pretrained= True, channel=self.channel).cuda()
-        #print self.model
+        self.model = resnet101(pretrained= True, channel=self.channel)
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        if self.multi_gpu_available():
+            print("training on %d gpus" % torch.cuda.device_count())
+            self.model = nn.DataParallel(self.model)
+
         #Loss function and optimizer
-        self.criterion = nn.CrossEntropyLoss().cuda()
+        self.criterion = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9)
         self.scheduler = ReduceLROnPlateau(self.optimizer, 'min', patience=1,verbose=True)
+
+        self.model.to(device)
+        self.criterion.to(device)
 
     def resume_and_evaluate(self):
         if self.resume:
             if os.path.isfile(self.resume):
                 print("==> loading checkpoint '{}'".format(self.resume))
                 checkpoint = torch.load(self.resume)
+
+                if self.multi_gpu_available():
+                    self.model.module.load_state_dict(checkpoint['model'])
+                else:
+                    self.model.load_state_dict(checkpoint['model'])
+
                 self.start_epoch = checkpoint['epoch']
                 self.best_prec1 = checkpoint['best_prec1']
-                self.model.load_state_dict(checkpoint['state_dict'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 print("==> loaded checkpoint '{}' (epoch {}) (best_prec1 {})"
                   .format(self.resume, checkpoint['epoch'], self.best_prec1))
@@ -128,7 +141,7 @@ class Motion_CNN():
             
             save_checkpoint({
                 'epoch': self.epoch,
-                'state_dict': self.model.state_dict(),
+                'state_dict': self.model.module.state_dict() if self.multi_gpu_available() else self.model.state_dict(),
                 'best_prec1': self.best_prec1,
                 'optimizer' : self.optimizer.state_dict()
             },is_best,'record/motion/checkpoint.pth.tar','record/motion/model_best.pth.tar')
@@ -260,6 +273,15 @@ class Motion_CNN():
         top5 = float(top5.numpy())
             
         return top1,top5,loss.data.cpu().numpy()
+
+    def gpu_available(self) -> bool:
+        return torch.cuda.is_available()
+
+    def gpu_count(self) -> int:
+        return torch.cuda.device_count()
+
+    def multi_gpu_available(self) -> bool:
+        return self.gpu_available() and self.gpu_count() > 1
 
 if __name__=='__main__':
     main()
